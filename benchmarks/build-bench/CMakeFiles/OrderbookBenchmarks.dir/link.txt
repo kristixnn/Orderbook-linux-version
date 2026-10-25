@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/OrderbookBenchmarks.dir/link.d CMakeFiles/OrderbookBenchmarks.dir/BenchMarkOrderbook.cpp.o -o OrderbookBenchmarks  -lbenchmark::benchmark -lorderbook_lib

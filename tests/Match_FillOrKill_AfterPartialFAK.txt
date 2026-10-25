@@ -1,0 +1,5 @@
+A B GoodTillCancel 100 10 1
+A S FillAndKill 100 20 2
+A S GoodTillCancel 100 5 3
+A B FillOrKill 100 5 4
+R 0 0 0
