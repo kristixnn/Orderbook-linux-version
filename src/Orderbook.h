@@ -12,6 +12,8 @@
 #include "OrderType.h"
 #include "OrderModify.h"
 #include "OrderbookLevelInfos.h"
+#include "IntrusiveOrderList.h"
+#include "OrderPool.h"
 
 class Orderbook {
 public:
@@ -19,10 +21,10 @@ public:
 	~Orderbook();
 	Orderbook(const Orderbook&) = delete;
 	Orderbook& operator=(const Orderbook&) = delete;
-	Orderbook(Orderbook&&) = delete;
+	Orderbook(const Orderbook&&) = delete;
 	Orderbook& operator=(Orderbook&&) = delete;
 
-	Trades AddOrder(OrderPointer order);
+	Trades AddOrder(OrderType type, OrderId id, Side side, Price price, Quantity quantity);
 	void CancelOrder(OrderId orderId);
 	Trades ModifyOrder(OrderModify order);
 
@@ -32,7 +34,7 @@ public:
 private:
 	struct OrderEntry {
 		OrderPointer order_{ nullptr };
-		OrderPointers::iterator location_;
+		//OrderPointers::iterator location_;
 	};
 
 	struct LevelData {
@@ -49,9 +51,11 @@ private:
 	// ordersPruneThread_ MUST stay last: it starts running inside the constructor,
 	// so everything it touches has to exist before it.
 	std::unordered_map<Price, LevelData> data_;
-	std::map<Price, OrderPointers, std::greater<Price>> bids_;  // best (highest) bid first
-	std::map<Price, OrderPointers, std::less<Price>> asks_;     // best (lowest) ask first
+	std::map<Price, IntrusiveOrderList, std::greater<Price>> bids_;  // best (highest) bid first
+	std::map<Price, IntrusiveOrderList, std::less<Price>> asks_;     // best (lowest) ask first
 	std::unordered_map<OrderId, OrderEntry> orders_;
+	OrderPool<500000> orderPool_;
+
 	mutable std::mutex ordersMutex_;
 	std::condition_variable shutdownConditionVariable_;
 	std::atomic<bool> shutdown_{ false };
@@ -60,6 +64,7 @@ private:
 	void PruneGoodForDayOrders();
 
 	// Internal functions assume ordersMutex_ is ALREADY held. Only the public functions lock.
+	Trades AddOrderInternal(OrderType type, OrderId id, Side side, Price price, Quantity quantity);
 	void CancelOrderInternal(OrderId orderId);
 
 	void OnOrderCancelled(OrderPointer order);

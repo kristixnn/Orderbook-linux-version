@@ -9,6 +9,7 @@
 class Order {
 public:
 	//{} prevents accidental data loss from implicit conversions
+	/*
 	Order(OrderType orderType, OrderId orderId, Side side, Price price, Quantity quantity)
 		: orderType_{ orderType }, orderId_{ orderId }, side_{ side }, price_{ price }, initialQuantity_{ quantity }, remainingQuantity_{quantity}
 	{ }
@@ -16,6 +17,32 @@ public:
 	Order(OrderId orderId, Side side, Quantity quantity)
 		: Order(OrderType::Market,orderId,side,Constants::InvalidPrice,quantity)
 	{}
+	*/
+	Order() = default;
+	Order* next = nullptr;
+	Order* prev = nullptr;
+
+	void init(OrderType orderType, OrderId orderId, Side side, Price price, Quantity quantity){
+	orderType_ = orderType;
+	orderId_=orderId;
+	side_=side;
+	price_=price;
+	initialQuantity_=quantity;
+	remainingQuantity_=quantity;
+	inUse=true;
+	next=nullptr;
+	prev=nullptr;
+	}
+	
+	void reset(){
+	orderId_=0;
+	price_=0;
+	initialQuantity_=0;
+	remainingQuantity_=0;
+	inUse=false;
+	next=nullptr;
+	prev=nullptr;
+	}
 
 	OrderType GetOrderType() const { return orderType_; }
 	OrderId GetOrderId() const { return orderId_; }
@@ -25,7 +52,7 @@ public:
 	Quantity GetRemainingQuantity() const { return remainingQuantity_; }
 	Quantity GetFilledQuantity() const { return GetInitialQuantity() - GetRemainingQuantity(); }
 	bool IsFilled() const { return GetRemainingQuantity() == 0; }
-
+	bool isInUse() const {return inUse;}
 	void Fill(Quantity quantity) {
 		if (quantity>GetRemainingQuantity())
 		{
@@ -44,14 +71,23 @@ public:
 		orderType_ = OrderType::GoodTillCancel;
 	}
 private:
+	/*
 	OrderType orderType_;
 	OrderId orderId_;
 	Side side_;
 	Price price_;
 	Quantity initialQuantity_;
 	Quantity remainingQuantity_;
+	*/
+	OrderType orderType_{OrderType::NoType};
+	OrderId orderId_{0};
+	Side side_{Side::NoSide};
+	Price price_{0};
+	Quantity initialQuantity_{0};
+	Quantity remainingQuantity_{0};
+	bool inUse = false;
 };
 
-using OrderPointer = std::shared_ptr<Order>;
-using OrderPointers = std::list<OrderPointer>;
+using OrderPointer = Order*;
+//using OrderPointers = std::list<OrderPointer>;
 using OrderIds = std::vector<OrderId>;
