@@ -18,11 +18,12 @@ public:
 	Price GetPrice() const { return price_; }
 	Quantity GetQuantity() const { return quantity_; }
 
+	/*
 	OrderPointer ToOrderPointer(OrderType type) const 
 	{
 		return std::make_shared<Order>(type, GetOrderId(), GetSide(), GetPrice(), GetQuantity());
 	}
-
+	*/
 	/*Quantity GetInitialQuantity() const { return initialQuantity_; }
 	Quantity GetRemainingQuantity() const { return remainingQuantity_; }
 	Quantity GetFilledQuantity() const {

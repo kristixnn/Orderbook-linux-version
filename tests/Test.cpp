@@ -217,7 +217,7 @@ TEST_P(OrderbookTestsFixture, OrderbookTestSuite)
 
 	InputHandler handler;
 	const auto [updates, result] = handler.GetInformations(file);
-
+	/*
 	auto GetOrder = [](const Information& information)
 	{
 		return std::make_shared<Order>(
@@ -228,7 +228,7 @@ TEST_P(OrderbookTestsFixture, OrderbookTestSuite)
 			information.quantity_
 		);
 	};
-
+	*/
 	auto GetOrderModify = [](const Information& information)
 	{
 		return OrderModify
@@ -247,7 +247,8 @@ TEST_P(OrderbookTestsFixture, OrderbookTestSuite)
 		{
 		case ActionType::Add:
 		{
-			const Trades& trades = orderbook.AddOrder(GetOrder(update));
+			
+			const Trades& trades = orderbook.AddOrder(update.orderType_, update.orderId_, update.side_, update.price_, update.quantity_);
 		}
 		break;
 		case ActionType::Modify:
