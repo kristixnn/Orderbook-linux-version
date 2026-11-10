@@ -13,7 +13,17 @@ Trades Orderbook::AddOrder(OrderType type, OrderId id, Side side, Price price, Q
 	return AddOrderInternal(type, id ,side, price, quantity);
 }
 Trades Orderbook::AddOrderInternal(OrderType type, OrderId id, Side side, Price price, Quantity quantity){
+	/*
 	if (orders_.contains(id))
+		return{};
+	*/
+	if (id>=orders_.size())
+		return{};	
+	
+	if (orders_[id].order_ != nullptr)
+		return{};
+
+	if (price<0 || price >= MAX_PRICE)
 		return{};
 
 	if (type == OrderType::FillAndKill && !CanMatch(side, price))
@@ -26,13 +36,62 @@ Trades Orderbook::AddOrderInternal(OrderType type, OrderId id, Side side, Price 
 	{
 		if (side == Side::Buy && !asks_.empty())
 		{
+			/*
 			price = asks_.rbegin()->first;
+			type=OrderType::GoodTillCancel;
+			*/
+			/*
+			auto firstActiveAsk=std::ranges::find_if(asks_, [](const LevelData& level){
+				return level.IsActive();
+			});
+			if (firstActiveAsk != asks_.end()){
+				price=std::distance(asks_.begin(),firstActiveAsk);
+				type=OrderType::GoodTillCancel;
+			}*/
+			if (bestAskPrice_ == -1)
+				return{};
+			//price = bestAskPrice_;
+			Price worstAsk = bestAskPrice_;
+			for (Price p = static_cast<Price>(asks_.size()) - 1; p >= bestAskPrice_; --p)
+			{
+				if (asks_[p].IsActive())
+				{
+					worstAsk = p;
+					break;
+				}
+			}
+			price = worstAsk;
 			type=OrderType::GoodTillCancel;
 		}
 		else if (side == Side::Sell && !bids_.empty())
 		{
+			/*
 			price = bids_.rbegin()->first;
 			type=OrderType::GoodTillCancel;
+			*/
+			/*
+			auto firstActiveBid = std::ranges::find_if(bids_, [](const LevelData& level){
+				return level.IsActive();
+			});
+			if (firstActiveBid != bids_.end()){
+				price = std::distance(bids_.begin(),firstActiveBid);
+				type=OrderType::GoodTillCancel;
+			}*/
+			if(bestBidPrice_ == -1)
+				return{};
+
+			//price = bestBidPrice_;
+			Price worstBid = bestBidPrice_;
+			for (Price p = 0; p <= bestBidPrice_; ++p)
+			{
+				if (bids_[p].IsActive())
+				{
+					worstBid = p;
+					break;
+				}
+			}
+			price = worstBid;
+			type = OrderType::GoodTillCancel;
 		}
 		else
 			return{};
@@ -66,15 +125,22 @@ Trades Orderbook::AddOrderInternal(OrderType type, OrderId id, Side side, Price 
 	if(side == Side::Buy)
 	{
 		auto& orders = bids_[price];
-		orders.PushBack(order);
+		orders.orders.PushBack(order);
+		orders.quantity_+=quantity;
+		if(bestBidPrice_==-1 || price>bestBidPrice_)
+			bestBidPrice_=price;
 	}
 	else
 	{
 		auto& orders = asks_[price];
-		orders.PushBack(order);
+		orders.orders.PushBack(order);
+		orders.quantity_+=quantity;
+		if(bestAskPrice_==-1 || price<bestAskPrice_)
+			bestAskPrice_=price;
 	}
-	orders_.insert({id,OrderEntry{order}});
-	OnOrderAdded(order);
+	orders_[id].order_=order;
+	activeOrderCount_++;
+	//OnOrderAdded(order);
 	return MatchTrades();
 }
 
@@ -86,37 +152,79 @@ void Orderbook::CancelOrder(OrderId orderId)
 
 void Orderbook::CancelOrderInternal(OrderId orderId)
 {
+	/*
 	if(!orders_.contains(orderId))
 	{
 		return;
 	}
-	
-	auto order = orders_.at(orderId).order_;
-	orders_.erase(orderId);
+	*/
+	if (orderId>=orders_.size() || orders_[orderId].order_==nullptr)
+		return;
+
+	OrderPointer order = orders_[orderId].order_;
+	orders_[orderId].order_=nullptr;
 
 	//const OrderPointer order = it->second.order_;
 	//const auto orderIterator = it->second.location_;
 	//orders_.erase(it);
 
 	const Price price = order->GetPrice();
+	const Quantity quantity = order->GetRemainingQuantity();
 	if (order->GetSide() == Side::Sell)
 	{
+		/*
 		auto& orders = asks_.at(price);
 		orders.Remove(order);
 		if (orders.Empty())
 			asks_.erase(price);
+		*/
+		asks_[price].orders.Remove(order);
+		asks_[price].quantity_-=quantity;
+		if (asks_[price].orders.Empty())
+		{
+			asks_[price].quantity_ = 0;
+			// Amortized O(1) update if best ask was removed
+			if (price == bestAskPrice_)
+			{
+				Price nextAsk = -1;
+				for (Price p = price + 1; p < static_cast<Price>(asks_.size()); ++p)
+				{
+					if (asks_[p].IsActive()) { nextAsk = p; break; }
+				}
+				bestAskPrice_ = nextAsk;
+			}
+		}
 	}
 	else
 	{
+		/*
 		auto& orders = bids_.at(price);
 		orders.Remove(order);
 		if (orders.Empty())
 			bids_.erase(price);
+		*/
+		bids_[price].orders.Remove(order);
+		bids_[price].quantity_-=quantity;
+		if (bids_[price].orders.Empty())
+		{
+			bids_[price].quantity_ = 0;
+			// Amortized O(1) update if best bid was removed
+			if (price == bestBidPrice_)
+			{
+				Price nextBid = -1;
+				for (Price p = price - 1; p >= 0; --p)
+				{
+					if (bids_[p].IsActive()) { nextBid = p; break; }
+				}
+				bestBidPrice_ = nextBid;
+			}
+		}
 	}
 	// UpdateLevelData drops the level entry itself when its order count reaches 0.
-	OnOrderCancelled(order);
+	//OnOrderCancelled(order);
 	order->reset();
 	orderPool_.deallocate(order);
+	activeOrderCount_--;
 }
 
 Trades Orderbook::ModifyOrder(OrderModify order)
@@ -134,20 +242,21 @@ Trades Orderbook::ModifyOrder(OrderModify order)
 	return AddOrder(order.ToOrderPointer(orderType));
 	*/
 	std::scoped_lock ordersLock{ordersMutex_};
-	const auto it = orders_.find(order.GetOrderId());
-	if(it == orders_.end())
+	//const auto it = orders_.find(order.GetOrderId());
+	auto id= order.GetOrderId();
+	if(id>=orders_.size()||orders_[id].order_==nullptr)
 	{
 		return{};
 	}
-	OrderType orderType = it->second.order_->GetOrderType();
+	OrderType orderType = orders_[id].order_->GetOrderType();
 	CancelOrderInternal(order.GetOrderId());
-	return AddOrderInternal(orderType, order.GetOrderId(),order.GetSide(),order.GetPrice(), order.GetQuantity());
+	return AddOrderInternal(orderType, id,order.GetSide(),order.GetPrice(), order.GetQuantity());
 }
 
 std::size_t Orderbook::Size() const
 {
 	std::scoped_lock ordersLock{ ordersMutex_ };
-	return orders_.size();
+	return activeOrderCount_;
 }
 
 OrderbookLevelInfos Orderbook::GetOrderInfos() const
@@ -166,7 +275,7 @@ OrderbookLevelInfos Orderbook::GetOrderInfos() const
 		) };
 	};
 	*/
-
+	/*
 	auto CreateLevelInfos = [](Price price, const IntrusiveOrderList& orders){
 		Quantity total=0;
 		const Order* current = orders.Front();
@@ -176,11 +285,24 @@ OrderbookLevelInfos Orderbook::GetOrderInfos() const
 		}
 		return LevelInfo{price,total};
 	};
+	*/
+	/*
 	for (const auto& [price, orders] : bids_)
 		bidInfos.push_back(CreateLevelInfos(price, orders));
 	for (const auto& [price, orders] : asks_)
 		askInfos.push_back(CreateLevelInfos(price, orders));
 
+	*/
+	for (Price price=static_cast<Price>(bids_.size())-1;price>=0;--price){
+		const auto& level=bids_[price];
+		if(level.IsActive())
+			bidInfos.push_back(LevelInfo{price,level.quantity_});
+	}
+	for (Price price = 0; price<static_cast<Price>(asks_.size());++price){
+		const auto& level = asks_[price];
+		if(level.IsActive())
+			askInfos.push_back(LevelInfo{price,level.quantity_});
+	}
 	return OrderbookLevelInfos{ bidInfos, askInfos };
 }
 
@@ -188,126 +310,151 @@ bool Orderbook::CanMatch(Side side, Price price) const
 {
 	if (side == Side::Buy)
 	{
-		if (asks_.empty())
+		if (bestAskPrice_ == -1)
 			return false;
-		const Price bestAsk = asks_.begin()->first;
-		return price >= bestAsk;
+		/*
+		Price bestAsk = -1;
+		for(Price price = 0;price<static_cast<Price>(asks_.size());++price){
+			if(asks_[price].IsActive()){
+				bestAsk=price;
+				break;
+			}	
+		}*/
+		return price >= bestAskPrice_;
 	}
 	else
 	{
-		if (bids_.empty())
+		if (bestBidPrice_ == -1)
 			return false;
-		const Price bestBid = bids_.begin()->first;
-		return price <= bestBid;
+		/*
+		Price bestBid = -1;
+		for(Price price = static_cast<Price>(bids_.size())-1; price >= 0; --price){
+			if(bids_[price].IsActive()){
+				bestBid=price;
+				break;
+			}
+		}*/
+		return price <= bestBidPrice_;
 	}
 }
+
 
 Trades Orderbook::MatchTrades()
 {
 	Trades trades;
-	trades.reserve(orders_.size());
+	trades.reserve(16);
 
 	while (true)
 	{
-		if (bids_.empty() || asks_.empty())
+		Price bidPrice = bestBidPrice_;
+		Price askPrice = bestAskPrice_;
+
+		if (bidPrice == -1 || askPrice == -1 || bidPrice < askPrice)
 			break;
 
-		auto& [bidPrice, bids] = *bids_.begin();
-		auto& [askPrice, asks] = *asks_.begin();
-
-		if (bidPrice < askPrice)
-			break;
-
-		while (!bids.Empty() && !asks.Empty())
+		while (bidPrice != -1 && askPrice != -1 && bidPrice >= askPrice &&
+		       bids_[bidPrice].IsActive() && asks_[askPrice].IsActive())
 		{
-			auto bid = bids.Front();
-			auto ask = asks.Front();
+			auto bid = bids_[bidPrice].orders.Front();
+			auto ask = asks_[askPrice].orders.Front();
 
 			Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
 			bid->Fill(quantity);
 			ask->Fill(quantity);
 			
+			bids_[bidPrice].quantity_ -= quantity;
+			asks_[askPrice].quantity_ -= quantity;
+
 			OrderId bidId = bid->GetOrderId();
-			Price bidPrice = bid->GetPrice();
+			Price bidPriceVal = bid->GetPrice();
 			bool bidFilled = bid->IsFilled();
 
 			OrderId askId = ask->GetOrderId();
-			Price askPrice = ask->GetPrice();
+			Price askPriceVal = ask->GetPrice();
 			bool askFilled = ask->IsFilled(); 
 		
-			if (bid->IsFilled())
+			if (bidFilled)
 			{
-				bids.PopFront();
-				orders_.erase(bidId);
+				bids_[bidPrice].orders.PopFront();
+				orders_[bidId].order_ = nullptr;
+				activeOrderCount_--;
 			}
-			if (ask->IsFilled())
+			if (askFilled)
 			{
-				asks.PopFront();
-				orders_.erase(askId);
+				asks_[askPrice].orders.PopFront();
+				orders_[askId].order_ = nullptr; // Correctly clears askId
+				activeOrderCount_--;
 			}
 
 			trades.push_back(Trade{
-				TradeInfo{ bidId, bidPrice, quantity },
-				TradeInfo{ askId, askPrice, quantity }
+				TradeInfo{ bidId, bidPriceVal, quantity },
+				TradeInfo{ askId, askPriceVal, quantity }
 			});
-
-			OnOrderMatched(bidPrice, quantity, bidFilled);
-			OnOrderMatched(askPrice, quantity, askFilled);
 		
-			if(bidFilled)
+			if (bidFilled)
 			{
 				bid->reset();
 				orderPool_.deallocate(bid);
 			}
-			if(askFilled)
+			if (askFilled)
 			{
 				ask->reset();
 				orderPool_.deallocate(ask);
 			}
 		}
-
-		// Copy the keys first: bidPrice/askPrice refer to the map nodes being erased.
-		// Do NOT erase data_ here: other orders may still rest at that price, and
-		// UpdateLevelData already removes a level when its count reaches 0.
-		/*
-		if (bids.empty())
+		if (activeOrderCount_ == 0)
 		{
-			const Price level = bidPrice;
-			bids_.erase(level);
+			bestBidPrice_ = -1;
+			bestAskPrice_ = -1;
 		}
-		if (asks.empty())
+		// Update or clean up empty price levels and adjust best price pointers
+		if (bids_[bidPrice].orders.Empty())
 		{
-			const Price level = askPrice;
-			asks_.erase(level);
-		}*/
-		if (bids.Empty())
-		{
-			bids_.erase(bidPrice);
+			bids_[bidPrice].quantity_ = 0;
+			if (bidPrice == bestBidPrice_)
+			{
+				Price nextBid = -1;
+				for (Price p = bidPrice - 1; p >= 0; --p)
+				{
+					if (bids_[p].IsActive()) { nextBid = p; break; }
+				}
+				bestBidPrice_ = nextBid;
+			}
 		}
-		if (asks.Empty())
+		
+		if (asks_[askPrice].orders.Empty())
 		{
-			asks_.erase(askPrice);
+			asks_[askPrice].quantity_ = 0;
+			if (askPrice == bestAskPrice_)
+			{
+				Price nextAsk = -1;
+				for (Price p = askPrice + 1; p < static_cast<Price>(asks_.size()); ++p)
+				{
+					if (asks_[p].IsActive()) { nextAsk = p; break; }
+				}
+				bestAskPrice_ = nextAsk;
+			}
 		}
 	}
 
-	// Cancel what is left of a FillAndKill order. We already hold ordersMutex_
-	// (we were called from AddOrder), so use the internal version.
-	if (!bids_.empty())
-	{	
-		auto& [_,bidsList]=*bids_.begin();
-		auto order = bidsList.Front();
+	// Handle FillAndKill cancellation at top of book
+	if (bestBidPrice_ != -1 && bids_[bestBidPrice_].IsActive()) {
+		auto order = bids_[bestBidPrice_].orders.Front();
+		if (order->GetOrderType() == OrderType::FillAndKill)
+			CancelOrderInternal(order->GetOrderId());
+	}	
+
+	if (bestAskPrice_ != -1 && asks_[bestAskPrice_].IsActive()) {
+		auto order = asks_[bestAskPrice_].orders.Front();
 		if (order->GetOrderType() == OrderType::FillAndKill)
 			CancelOrderInternal(order->GetOrderId());
 	}
-	if (!asks_.empty())
-	{
-		auto& [_,asksList]=*asks_.begin();
-		auto order = asksList.Front();
-		if (order->GetOrderType() == OrderType::FillAndKill)
-			CancelOrderInternal(order->GetOrderId());
-	}
+	
 	return trades;
 }
+
+
+
 
 void Orderbook::PruneGoodForDayOrders()
 {
@@ -345,10 +492,16 @@ void Orderbook::PruneGoodForDayOrders()
 
 		// Still holding the lock: collect and cancel in one critical section.
 		OrderIds orderIds;
-		for (const auto& [id, entry] : orders_)
-			if (entry.order_->GetOrderType() == OrderType::GoodForDay)
-				orderIds.push_back(id);
-
+		for (const auto& entry : orders_){
+			auto order = entry.order_;
+			if(order==nullptr)
+				continue;
+			
+			if(order->GetOrderType() != OrderType::GoodForDay)
+				continue;
+			
+			orderIds.push_back(order->GetOrderId());
+		}
 		for (const auto id : orderIds)
 			CancelOrderInternal(id);
 	}
@@ -366,8 +519,8 @@ Orderbook::~Orderbook()
 	ordersPruneThread_.join();
 }
 
-Orderbook::Orderbook() : ordersPruneThread_{ [this] { PruneGoodForDayOrders(); } } {}
-
+Orderbook::Orderbook() : bestBidPrice_(-1),bestAskPrice_(-1), bids_(MAX_PRICE),asks_(MAX_PRICE),orders_(MAX_ORDERS), ordersPruneThread_{ [this] { PruneGoodForDayOrders(); } } {}
+/*
 void Orderbook::OnOrderCancelled(OrderPointer order)
 {
 	UpdateLevelData(order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
@@ -396,6 +549,7 @@ void Orderbook::UpdateLevelData(Price price, Quantity quantity, LevelData::Actio
 	if (data.count_ == 0)
 		data_.erase(price);
 }
+*/
 
 /*
 bool Orderbook::CanFullyFill(Side side, Price price, Quantity quantity) const
@@ -445,19 +599,57 @@ bool Orderbook::CanFullyFill(Side side, Price price, Quantity quantity) const
 	if (!CanMatch(side, price))
 		return false;
 
-	std::optional<Price> threshold;
-
+	//std::optional<Price> threshold;
+	Quantity accumulatedQuantity = 0;
 	if (side == Side::Buy)
 	{
+		//Price askPrice = -1;
+		/*
 		const auto [askPrice, _] = *asks_.begin();
 		threshold = askPrice;
+		*/
+		/*
+		for (Price price = 0; price < static_cast<Price>(asks_.size()); ++price){
+			if(asks_[price].IsActive()){
+				askPrice = price;
+				break;
+			}
+		}*/
+		if(bestAskPrice_ == -1)		
+			return false;
+		for (Price priceCmp = bestAskPrice_; priceCmp <= price && priceCmp < static_cast<Price>(asks_.size()); ++priceCmp){
+			if(asks_[priceCmp].IsActive()){
+				accumulatedQuantity += asks_[priceCmp].quantity_;
+				if (accumulatedQuantity >= quantity)
+					return true;
+			}	
+		}
 	}
 	else
 	{
+		/*
 		const auto [bidPrice, _] = *bids_.begin();
 		threshold = bidPrice;
+		*/
+		//Price bidPrice = -1;
+		/*
+		for (Price price = static_cast<Price>(bids_.size())-1; price >= 0; --price){
+			if(bids_[price].IsActive()){
+				bidPrice = price;
+				break;
+			}
+		}*/
+		if(bestBidPrice_ == -1)
+			return false;
+		for (Price priceCmp = bestBidPrice_; priceCmp >= price && priceCmp >= 0; --priceCmp){
+			if(bids_[priceCmp].IsActive()){
+				accumulatedQuantity += bids_[priceCmp].quantity_;
+				if (accumulatedQuantity >= quantity)
+					return true;
+			}
+		}
 	}
-
+	/*
 	for (const auto& [levelPrice, levelData] : data_)
 	{
 		if (threshold.has_value() && ((side == Side::Buy && threshold.value() > levelPrice) || (side == Side::Sell && threshold.value() < levelPrice)))
@@ -468,5 +660,6 @@ bool Orderbook::CanFullyFill(Side side, Price price, Quantity quantity) const
 			return true;
 		quantity -= levelData.quantity_;
 	}
+	*/
 	return false;
 }

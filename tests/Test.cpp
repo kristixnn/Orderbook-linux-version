@@ -281,5 +281,7 @@ INSTANTIATE_TEST_SUITE_P(Tests, OrderbookTestsFixture, googletest::ValuesIn({
 	"Modify_Side.txt",
 	"Match_Market.txt",
 	"Match_FillAndKill_Partial.txt",
-	"Match_FillOrKill_AfterPartialFAK.txt"
+	"Match_FillOrKill_AfterPartialFAK.txt",
+	"BestLevelEmpties.txt",
+	"BestLevelCanceled.txt"
 	}));
