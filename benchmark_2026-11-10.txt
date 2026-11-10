@@ -1,0 +1,15 @@
+------------------------------------------------------------------------------------------------------
+Benchmark                                            Time             CPU   Iterations UserCounters...
+------------------------------------------------------------------------------------------------------
+BM_OrderbookAdd/iterations:200000_mean            20.6 ns         20.3 ns           15 items_per_second=49.326M/s
+BM_OrderbookAdd/iterations:200000_median          20.5 ns         20.2 ns           15 items_per_second=49.5335M/s
+BM_OrderbookAdd/iterations:200000_stddev         0.478 ns        0.484 ns           15 items_per_second=1.17065M/s
+BM_OrderbookAdd/iterations:200000_cv              2.33 %          2.39 %            15 items_per_second=2.37%
+BM_OrderbookMatch/iterations:200000_mean          47.7 ns         47.5 ns           15 items_per_second=21.057M/s
+BM_OrderbookMatch/iterations:200000_median        47.8 ns         47.6 ns           15 items_per_second=21.0265M/s
+BM_OrderbookMatch/iterations:200000_stddev       0.334 ns        0.358 ns           15 items_per_second=159.369k/s
+BM_OrderbookMatch/iterations:200000_cv            0.70 %          0.75 %            15 items_per_second=0.76%
+BM_OrderbookCancel/iterations:200000_mean         9.30 ns         9.28 ns           15 items_per_second=108.406M/s
+BM_OrderbookCancel/iterations:200000_median       9.19 ns         9.18 ns           15 items_per_second=108.953M/s
+BM_OrderbookCancel/iterations:200000_stddev      0.788 ns        0.772 ns           15 items_per_second=8.54845M/s
+BM_OrderbookCancel/iterations:200000_cv           8.47 %          8.32 %            15 items_per_second=7.89%
